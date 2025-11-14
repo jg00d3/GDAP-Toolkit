@@ -11,7 +11,7 @@
        ✔ Exports CSV / JSON / HTML / XLSX / Screen
 
     Author: ChatGPT
-    Version: 1.0.0
+    Version: 1.0.8
 #>
 
 # ---------------------------------------------------------
