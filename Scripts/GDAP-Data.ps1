@@ -1,6 +1,6 @@
 <#
     GDAP-Data.ps1
-    Version: 1.0.8
+    Version: 1.0.9
 #>
 
 function Write-GdapLog {
@@ -18,10 +18,13 @@ function Write-GdapLog {
     "$timestamp [$Level] $Message" | Out-File -Append -FilePath $logFile
 }
 
+# -------------------------------------------------------
+# Retrieve base GDAP relationships
+# -------------------------------------------------------
 function Get-GdapRelationships {
     Write-GdapLog "Retrieving GDAP relationships…"
 
-    $url = "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$expand=accessDetails"
+    $url = "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships"
 
     $results = Invoke-MgGraphRequest -Method GET -Uri $url
     $items = $results.value
@@ -31,10 +34,27 @@ function Get-GdapRelationships {
         $items += $results.value
     }
 
-    Write-GdapLog "Retrieved $($items.Count) GDAP relationships."
+    # Retrieve accessDetails for each relationship
+    foreach ($rel in $items) {
+        $relId = $rel.id
+        $detailsUrl = "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships/$relId/accessDetails"
+
+        try {
+            $rel.accessDetails = Invoke-MgGraphRequest -Method GET -Uri $detailsUrl
+        }
+        catch {
+            $rel.accessDetails = $null
+        }
+    }
+
+    Write-GdapLog "Retrieved $($items.Count) GDAP relationships (with accessDetails)."
+
     return $items
 }
 
+# -------------------------------------------------------
+# Role Definitions Map
+# -------------------------------------------------------
 function Get-GdapRoleDefinitionsMap {
     Write-GdapLog "Retrieving role definitions…"
 
@@ -50,6 +70,9 @@ function Get-GdapRoleDefinitionsMap {
     return $map
 }
 
+# -------------------------------------------------------
+# Unified Assignments Table
+# -------------------------------------------------------
 function Get-GdapAccessAssignments {
     param(
         [array]$Relationships,
