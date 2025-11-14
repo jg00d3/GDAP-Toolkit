@@ -1,6 +1,6 @@
 <#
     GDAP-Data.ps1
-    Version: 1.0.10
+    Version: 1.0.11
 #>
 
 function Write-GdapLog {
@@ -19,22 +19,24 @@ function Write-GdapLog {
 }
 
 # ---------------------------------------------------------------------
-# Retrieve GDAP relationships (SAFE PAGING + separate accessDetails)
+# Retrieve GDAP relationships (force $top=999 — prevents hang)
 # ---------------------------------------------------------------------
 function Get-GdapRelationships {
     Write-GdapLog "Retrieving GDAP relationships..."
 
-    $items = @()
-    $url   = "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships"
+    $url = "https://graph.microsoft.com/beta/tenantRelationships/delegatedAdminRelationships?`$top=999"
 
-    do {
+    try {
         $resp = Invoke-MgGraphRequest -Method GET -Uri $url
-        if ($resp.value) { $items += $resp.value }
-        $url = $resp.'@odata.nextLink'
     }
-    while ($url)
+    catch {
+        Write-GdapLog "ERROR retrieving GDAP relationships: $($_.Exception.Message)" "ERROR"
+        return @()
+    }
 
-    # Fetch accessDetails separately
+    $items = $resp.value
+
+    # Retrieve accessDetails for each relationship (non-hanging)
     foreach ($rel in $items) {
 
         $id = $rel.id
