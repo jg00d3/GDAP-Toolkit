@@ -1,6 +1,6 @@
 <#
     GDAP-Output.ps1
-    Version: 1.0.5
+    Version: 1.0.6
 #>
 
 function Write-GdapLog {
@@ -44,29 +44,29 @@ function Get-GdapSummaryTable {
 
         # No valid expiration
         if ([string]::IsNullOrWhiteSpace($end)) {
-            $rel | Add-Member DaysRemaining -Value -99999 -Force
-            $rel | Add-Member ExpiringSoon -Value $false -Force
-            $rel | Add-Member IsExpired -Value $true -Force
-            $rel | Add-Member IsActive -Value $false -Force
+            $rel | Add-Member -NotePropertyName DaysRemaining  -NotePropertyValue -99999 -Force
+            $rel | Add-Member -NotePropertyName ExpiringSoon   -NotePropertyValue $false -Force
+            $rel | Add-Member -NotePropertyName IsExpired      -NotePropertyValue $true -Force
+            $rel | Add-Member -NotePropertyName IsActive       -NotePropertyValue $false -Force
             continue
         }
 
         # Convert to datetime
         try { $endDt = [datetime]$end }
         catch {
-            $rel | Add-Member DaysRemaining -Value -99999 -Force
-            $rel | Add-Member ExpiringSoon -Value $false -Force
-            $rel | Add-Member IsExpired -Value $true -Force
-            $rel | Add-Member IsActive -Value $false -Force
+            $rel | Add-Member -NotePropertyName DaysRemaining  -NotePropertyValue -99999 -Force
+            $rel | Add-Member -NotePropertyName ExpiringSoon   -NotePropertyValue $false -Force
+            $rel | Add-Member -NotePropertyName IsExpired      -NotePropertyValue $true -Force
+            $rel | Add-Member -NotePropertyName IsActive       -NotePropertyValue $false -Force
             continue
         }
 
         $days = [int]($endDt - $now).TotalDays
 
-        $rel | Add-Member DaysRemaining -Value $days -Force
-        $rel | Add-Member ExpiringSoon -Value ($days -le 30 -and $days -gt 0) -Force
-        $rel | Add-Member IsExpired -Value ($days -le 0) -Force
-        $rel | Add-Member IsActive -Value ($days -gt 0) -Force
+        $rel | Add-Member -NotePropertyName DaysRemaining  -NotePropertyValue $days -Force
+        $rel | Add-Member -NotePropertyName ExpiringSoon   -NotePropertyValue ($days -le 30 -and $days -gt 0) -Force
+        $rel | Add-Member -NotePropertyName IsExpired      -NotePropertyValue ($days -le 0) -Force
+        $rel | Add-Member -NotePropertyName IsActive       -NotePropertyValue ($days -gt 0) -Force
     }
 
     return [pscustomobject]@{
