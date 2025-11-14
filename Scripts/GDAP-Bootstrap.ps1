@@ -1,22 +1,25 @@
 <#
     GDAP-Bootstrap.ps1
-    Self-updating loader for the GDAP Toolkit
-    Author: ChatGPT
-    Version: 1.0.0
+    Version: 1.0.2
+
+    Purpose:
+    - Checks local version.txt
+    - Fetches remote version.txt from GitHub (cache-busted)
+    - If remote version is newer → downloads updated modules
+    - Unblocks files
+    - Logs updates to /Logs/
+    - Launches GDAP-Export.ps1
+
 #>
 
-# ---------------------------------------------
+# ------------------------------
 # Config
-# ---------------------------------------------
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$GitHubUser = "jg00d3"
-$GitHubRepo = "gdap-toolkit"
+# ------------------------------
+
+$GitHubUser   = "jg00d3"
+$GitHubRepo   = "gdap-toolkit"
 $GitHubFolder = "Scripts"
-
-$RawBase = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/main/$GitHubFolder"
-
-# Files that bootstrap manages
-$ManagedFiles = @(
+$FilesToDownload = @(
     "version.txt",
     "GDAP-Utils.ps1",
     "GDAP-Modules.ps1",
@@ -26,99 +29,131 @@ $ManagedFiles = @(
     "GDAP-Export.ps1"
 )
 
-$LocalVersionFile = Join-Path $ScriptRoot "version.txt"
-$LocalVersion = "0.0.0"
+# Paths
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LogsDir   = Join-Path $ScriptDir "Logs"
+if (!(Test-Path $LogsDir)) { New-Item -ItemType Directory -Path $LogsDir | Out-Null }
 
-# ---------------------------------------------
-# Helper: Write colored output (local fallback)
-# ---------------------------------------------
-function Write-Color {
-    param([string]$Text, [ConsoleColor]$Color = "White")
-    $old = $Host.UI.RawUI.ForegroundColor
-    $Host.UI.RawUI.ForegroundColor = $Color
-    Write-Host $Text
-    $Host.UI.RawUI.ForegroundColor = $old
+$RawBase = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/main/$GitHubFolder"
+
+# ------------------------------
+# Helper: Logging
+# ------------------------------
+function Write-Log {
+    param([string]$Message)
+    $logFile = Join-Path $LogsDir "bootstrap-$(Get-Date -Format yyyyMMdd).log"
+    $timestamp = "[{0}]" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+    "$timestamp $Message" | Tee-Object -FilePath $logFile -Append
 }
 
-# ---------------------------------------------
-# Load local version
-# ---------------------------------------------
+# ------------------------------
+# Read Local Version
+# ------------------------------
+$LocalVersionFile = Join-Path $ScriptDir "version.txt"
 if (Test-Path $LocalVersionFile) {
-    $LocalVersion = Get-Content $LocalVersionFile -ErrorAction SilentlyContinue
+    $LocalVersion = (Get-Content $LocalVersionFile).Trim()
+} else {
+    $LocalVersion = "0.0.0"
 }
 
-Write-Color "Local Version : $LocalVersion" Cyan
+Write-Log "Local Version : $LocalVersion"
+Write-Host "Local Version : $LocalVersion"
 
-# ---------------------------------------------
-# Retrieve remote version
-# ---------------------------------------------
-$RemoteVersionUrl = "$RawBase/version.txt"
-Write-Color "Checking remote version: $RemoteVersionUrl" DarkGray
+# ------------------------------
+# Read Remote Version (cache-busted)
+# ------------------------------
+$RemoteVersionUrl = "$RawBase/version.txt?cacheBust=$(Get-Random)"
+Write-Log "Checking remote version: $RemoteVersionUrl"
+Write-Host "Checking remote version: $RemoteVersionUrl"
 
 try {
-    $RemoteVersion = Invoke-WebRequest -Uri $RemoteVersionUrl -UseBasicParsing |
-        Select-Object -ExpandProperty Content
-    Write-Color "Remote Version: $RemoteVersion" Green
+    $RemoteVersion = (
+        Invoke-WebRequest -Uri $RemoteVersionUrl -UseBasicParsing
+    ).Content.Trim()
+    Write-Host "Remote Version: $RemoteVersion"
+    Write-Log "Remote Version: $RemoteVersion"
 }
 catch {
-    Write-Color "ERROR: Unable to fetch remote version: $($_.Exception.Message)" Red
+    Write-Warning "ERROR: Unable to fetch remote version."
+    Write-Log "ERROR: Failed to fetch remote version: $_"
     exit
 }
 
-# ---------------------------------------------
-# Version comparison
-# ---------------------------------------------
-if ($LocalVersion -ne $RemoteVersion) {
-    Write-Color "`nUPDATE AVAILABLE — Updating GDAP Toolkit…" Yellow
+# ------------------------------
+# Compare Versions
+# ------------------------------
+function Convert-Version($v) {
+    return [version]$v
+}
 
-    foreach ($file in $ManagedFiles) {
-        $url = "$RawBase/$file"
-        $localPath = Join-Path $ScriptRoot $file
+$LocalV  = Convert-Version $LocalVersion
+$RemoteV = Convert-Version $RemoteVersion
 
-        Write-Color "Downloading $file…" Cyan
+$UpdateNeeded = $RemoteV -gt $LocalV
+
+# ------------------------------
+# Perform Update
+# ------------------------------
+if ($UpdateNeeded) {
+
+    Write-Host ""
+    Write-Host "UPDATE AVAILABLE — Updating GDAP Toolkit…" -ForegroundColor Yellow
+    Write-Log "UPDATE AVAILABLE — Updating GDAP Toolkit…"
+
+    foreach ($file in $FilesToDownload) {
+        $remoteFileUrl = "$RawBase/$file?cacheBust=$(Get-Random)"
+        $localPath = Join-Path $ScriptDir $file
+
+        Write-Host "Downloading $file…" -ForegroundColor Cyan
+        Write-Log "Downloading $file from $remoteFileUrl"
+
         try {
-            Invoke-WebRequest -Uri $url -OutFile $localPath -UseBasicParsing -ErrorAction Stop
-            Unblock-File -Path $localPath -ErrorAction SilentlyContinue
-            Write-Color "Updated: $file" Green
+            Invoke-WebRequest -Uri $remoteFileUrl -OutFile $localPath -UseBasicParsing
+            Unblock-File -Path $localPath
+            Write-Host "Updated: $file" -ForegroundColor Green
+            Write-Log "Updated: $file"
         }
         catch {
-            Write-Color "FAILED: $file — $($_.Exception.Message)" Red
+            Write-Warning "Failed to download $file"
+            Write-Log "ERROR: Failed to download $file — $_"
         }
     }
 
-    Write-Color "`nUpdate complete." Green
+    Write-Host ""
+    Write-Host "Update complete."
+    Write-Log "Update complete."
 }
 else {
-    Write-Color "`nGDAP Toolkit is already up to date." Green
+    Write-Host ""
+    Write-Host "GDAP Toolkit is up to date." -ForegroundColor Green
+    Write-Log "GDAP Toolkit is up to date."
 }
 
-# ---------------------------------------------
-# Main Menu
-# ---------------------------------------------
-Write-Color "`n===============================" Yellow
-Write-Color "        GDAP TOOLKIT MENU       " Yellow
-Write-Color "===============================" Yellow
+# ------------------------------
+# Menu
+# ------------------------------
 
-Write-Color "1. Run GDAP Export" White
-Write-Color "2. Exit" White
+Write-Host ""
+Write-Host "==============================="
+Write-Host "        GDAP TOOLKIT MENU"
+Write-Host "==============================="
+Write-Host "1. Run GDAP Export"
+Write-Host "2. Exit"
+Write-Host ""
+$choice = Read-Host "Select (1-2)"
 
-$choice = Read-Host "`nSelect (1-2)"
+if ($choice -eq "1") {
+    Write-Host ""
+    Write-Host "Launching GDAP Export…" -ForegroundColor Cyan
+    Write-Log "Launching GDAP Export"
 
-switch ($choice) {
-
-    '1' {
-        $exportScript = Join-Path $ScriptRoot "GDAP-Export.ps1"
-        if (Test-Path $exportScript) {
-            Write-Color "`nLaunching GDAP Export…" Cyan
-            & $exportScript
-        }
-        else {
-            Write-Color "ERROR: GDAP-Export.ps1 not found!" Red
-        }
-    }
-
-    default {
-        Write-Color "Exiting…" DarkGray
+    $exportScript = Join-Path $ScriptDir "GDAP-Export.ps1"
+    if (Test-Path $exportScript) {
+        & $exportScript
+    } else {
+        Write-Warning "GDAP-Export.ps1 not found!"
+        Write-Log "ERROR: GDAP-Export.ps1 not found."
     }
 }
 
+exit
